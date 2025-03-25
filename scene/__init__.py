@@ -44,7 +44,11 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
             print("Found transforms_train.json file, assuming Blender data set!")
-            scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
+            scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.eval)
+        elif os.path.exists(os.path.join(args.source_path, "scans", "mesh_aligned_0.05.ply")):
+            print("there is Scannetpp data")
+            scene_info = sceneLoadTypeCallbacks["ScanNetpp"](os.path.join(args.source_path, "dslr/nerfstudio"), args.white_background, os.path.join(args.source_path, "dslr/undistorted_depths"), args.eval, os.path.join(args.source_path, "dslr/nerfstudio/", "lang_feat_selected_imgs.json"))
+            # scene_info = sceneLoadTypeCallbacks["ScanNetpp"](args.source_path, args.eval)
         else:
             print(args.source_path)
             assert False, "Could not recognize scene type!"

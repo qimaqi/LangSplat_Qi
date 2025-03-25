@@ -88,7 +88,15 @@ class Camera(nn.Module):
             raise ValueError("feature_level=", feature_level)
         # point_feature = torch.cat((point_feature2, point_feature3, point_feature4), dim=-1).to('cuda')
         point_feature = point_feature1.reshape(self.image_height, self.image_width, -1).permute(2, 0, 1)
-       
+        # print("point_feature.shape", point_feature.shape)
+        # print("mask.shape", mask.shape)
+        a = torch.zeros_like(point_feature).to('cuda')
+        print("a.shape", a.shape)
+        # RuntimeError: CUDA error: an illegal memory access was encountered
+        # CUDA kernel errors might be asynchronously reported at some other API call,so the stacktrace below might be incorrect.
+        # For debugging consider passing CUDA_LAUNCH_BLOCKING=1.
+        # point_feature.shape torch.Size([3, 584, 876]) [25/03 07:13:07]
+        # mask.shape torch.Size([1, 584, 876]) [25/03 07:13:07]
         return point_feature.cuda(), mask.cuda()
 
 class MiniCam:

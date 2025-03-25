@@ -15,6 +15,7 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.gaussian_model import GaussianModel
 from utils.sh_utils import eval_sh
+import numpy as np
 
 def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, opt, scaling_modifier = 1.0, override_color = None):
     """
@@ -47,7 +48,7 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
         debug=pipe.debug,
-        include_feature=opt.include_feature,
+        include_feature=True, #opt.include_feature,
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -88,7 +89,8 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         language_feature_precomp = language_feature_precomp/ (language_feature_precomp.norm(dim=-1, keepdim=True) + 1e-9)
         # language_feature_precomp = torch.sigmoid(language_feature_precomp)
     else:
-        language_feature_precomp = torch.zeros((1,), dtype=opacity.dtype, device=opacity.device)
+        language_feature_precomp  = colors_precomp * 0.0
+        # torch.zeros((1,), dtype=opacity.dtype, device=opacity.device)
         
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     # start_time = time.time()
@@ -107,7 +109,14 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
     # print('render_init_rasterizer程序运行时间为: %s Seconds'%(end_time-start_time))
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-    
+
+    print("rendered_image", rendered_image.shape, rendered_image.mean(), rendered_image.min(), rendered_image.max())
+    # torch.cuda.synchronize()
+    print("radii shape ", radii.shape, radii.device)
+    radii_cpu = radii.cpu().detach().numpy()
+    print("radii_cpu", radii_cpu.shape, np.mean(radii_cpu), np.min(radii_cpu), np.max(radii_cpu))
+    print("radii", radii)
+    print("radii>0", (radii>0).shape)
     return {"render": rendered_image,
             "language_feature_image": language_feature_image,
             "viewspace_points": screenspace_points,

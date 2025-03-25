@@ -15,6 +15,8 @@ from copy import deepcopy
 import torch
 import torchvision
 from torch import nn
+import json 
+
 
 try:
     import open_clip
@@ -120,7 +122,7 @@ def create(image_list, data_list, save_folder):
     seg_maps = torch.zeros((len(image_list), 4, *image_list[0].shape[1:])) 
     mask_generator.predictor.model.to('cuda')
 
-    for i, img in tqdm(enumerate(image_list), desc="Embedding images", leave=False, total=len(image_list)):
+    for i, img in tqdm(enumerate(image_list), desc="Embedding images", leave=False):
         timer += 1
         try:
             img_embed, seg_map = _embed_clip_sam_tiles(img.unsqueeze(0), sam_encoder)
@@ -349,14 +351,38 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_path', type=str, required=True)
     parser.add_argument('--resolution', type=int, default=-1)
     parser.add_argument('--sam_ckpt_path', type=str, default="ckpts/sam_vit_h_4b8939.pth")
+    parser.add_argument('--start_idx', type=int, default=0)
+    parser.add_argument('--end_idx', type=int, default=-1)
+
     args = parser.parse_args()
     torch.set_default_dtype(torch.float32)
 
+    # get validation folder
+    validation_path = '/usr/bmicnas02/data-biwi-01/qimaqi_data/workspace/iccv_2025/GS_Transformer/data/scannet_full/splits/nvs_sem_val.txt'
+    validation_set = np.loadtxt(validation_path, dtype=str)
+    
+
     dataset_path = args.dataset_path
     sam_ckpt_path = args.sam_ckpt_path
-    img_folder = os.path.join(dataset_path, 'images')
-    data_list = os.listdir(img_folder)
-    data_list.sort()
+
+    scannetpp_folder = os.listdir(dataset_path)
+    # check if all is folder\
+    scannetpp_folder = [f for f in scannetpp_folder if os.path.isdir(os.path.join(dataset_path, f))]
+    scannetpp_folder.sort()
+
+    print("Find {} scenes in the dataset folder".format(len(scannetpp_folder)))
+
+    start_idx = args.start_idx
+    end_idx = args.end_idx
+    if end_idx == -1:
+        end_idx = len(scannetpp_folder)
+    if end_idx > len(scannetpp_folder):
+        end_idx = len(scannetpp_folder)
+
+    scannetpp_folder = scannetpp_folder[start_idx:end_idx]
+
+    # data_list = os.listdir(img_folder)
+    # data_list.sort()
 
     model = OpenCLIPNetwork(OpenCLIPNetworkConfig)
     sam = sam_model_registry["vit_h"](checkpoint=sam_ckpt_path).to('cuda')
@@ -371,34 +397,60 @@ if __name__ == '__main__':
         min_mask_region_area=100,
     )
 
-    img_list = []
-    WARNED = False
-    for data_path in data_list:
-        image_path = os.path.join(img_folder, data_path)
-        image = cv2.imread(image_path)
-
-        orig_w, orig_h = image.shape[1], image.shape[0]
-        if args.resolution == -1:
-            if orig_h > 1080:
-                if not WARNED:
-                    print("[ INFO ] Encountered quite large input images (>1080P), rescaling to 1080P.\n "
-                        "If this is not desired, please explicitly specify '--resolution/-r' as 1")
-                    WARNED = True
-                global_down = orig_h / 1080
-            else:
-                global_down = 1
-        else:
-            global_down = orig_w / args.resolution
-            
-        scale = float(global_down)
-        resolution = (int( orig_w  / scale), int(orig_h / scale))
+    for scene_i in scannetpp_folder:
+        if scene_i not in validation_set:
+            print("Skip training scene: ", scene_i)
+            continue
         
-        image = cv2.resize(image, resolution)
-        image = torch.from_numpy(image)
-        img_list.append(image)
-    images = [img_list[i].permute(2, 0, 1)[None, ...] for i in range(len(img_list))]
-    imgs = torch.cat(images)
+        print("Processing validation scene: ", scene_i)
+        data_list = os.listdir(os.path.join(dataset_path, scene_i, 'dslr', 'undistorted_images'))
+        data_list = sorted(data_list)
+        
+        img_list = []
+        WARNED = False
+        scene_root_path = os.path.join(dataset_path, scene_i, 'dslr')
+        # consider subset of datalists in 
+        selected_json = os.path.join(dataset_path, scene_i, 'dslr', 'nerfstudio', 'lang_feat_selected_imgs.json')
+        with open(selected_json, 'r') as f:
+            selected_data_list = json.load(f)
+        selected_frames = selected_data_list['frames']
+        selected_imgs_list = [frame_i['file_path'] for frame_i in selected_frames]
 
-    save_folder = os.path.join(dataset_path, 'language_features')
-    os.makedirs(save_folder, exist_ok=True)
-    create(imgs, data_list, save_folder)
+        for data_path in data_list:
+            if data_path not in selected_imgs_list:
+                print("Skip training image: ", data_path)
+                continue
+            print("Adding image: ", data_path)
+            image_path = os.path.join(dataset_path, scene_i, 'dslr', 'undistorted_images', data_path)
+            image = cv2.imread(image_path)
+
+            orig_w, orig_h = image.shape[1], image.shape[0]
+            target_w, target_h = 876, 584
+            # [584, 876]
+            resolution = (target_w, target_h)
+            global_down = orig_w / target_w
+            # if args.resolution == -1:
+            #     if orig_h > 1080:
+            #         if not WARNED:
+            #             print("[ INFO ] Encountered quite large input images (>1080P), rescaling to 1080P.\n "
+            #                 "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+            #             WARNED = True
+            #         global_down = orig_h / 1080
+            #     else:
+            #         global_down = 1
+            # else:
+            #     global_down = orig_w / args.resolution
+                
+            scale = float(global_down)
+            resolution = (int( orig_w  / scale), int(orig_h / scale))
+            
+            image = cv2.resize(image, resolution)
+            image = torch.from_numpy(image)
+            img_list.append(image)
+        images = [img_list[i].permute(2, 0, 1)[None, ...] for i in range(len(img_list))]
+        imgs = torch.cat(images)
+
+        # save_folder = os.path.join(dataset_path, 'language_features')
+        save_folder = os.path.join(scene_root_path, 'language_features')
+        os.makedirs(save_folder, exist_ok=True)
+        create(imgs, data_list, save_folder)

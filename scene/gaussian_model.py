@@ -323,6 +323,8 @@ class GaussianModel:
 
         self.active_sh_degree = self.max_sh_degree
 
+        print("Loaded {} points".format(xyz.shape[0]))
+
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
         for group in self.optimizer.param_groups:
